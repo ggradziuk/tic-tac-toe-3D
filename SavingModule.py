@@ -60,36 +60,26 @@ class SavingModule:
             sys.stdout = original_stdout
     
     
-    def save_checkpoint(self,
-                        model,
-                        epoch = None,
-                        loss_l = [],
-                        p_forbidden_l = [],
-                        p_good_l = [],
-                        p_bad_l = [],
-                        good_rate_l = [],
-                        bad_rate_l = [],
-                        allowed_rate_l = []):
-        
+    def save_checkpoint(self, model, epoch, metrics):
         ### save a checkpoint of the model ###
         model.save(self.dir + f"checkpoints/{epoch}")
         
         ### generate and save plots ###
-        plt.plot(loss_l, '-', label="loss")
+        plt.plot(metrics["loss"], '-', label="loss")
         plt.legend()
         plt.savefig(self.dir + "loss.png")
         plt.clf()
         
-        plt.plot(p_forbidden_l, '-', label="p_forbidden")
-        plt.plot(p_good_l, '-', label="p_good")
-        plt.plot(p_bad_l, '-', label="p_bad")
+        plt.plot(metrics["p_forbidden"], '-', label="p_forbidden")
+        plt.plot(metrics["p_good"], '-', label="p_good")
+        plt.plot(metrics["p_bad"], '-', label="p_bad")
         plt.legend()
         plt.savefig(self.dir + "probs.png")
         plt.clf()
         
-        plt.plot(good_rate_l, '-', label="good_rate")
-        plt.plot(bad_rate_l, '-', label="bad_rate")
-        plt.plot(allowed_rate_l, '-', label="allowed_rate")
+        plt.plot(metrics["good_rate"], '-', label="good_rate")
+        plt.plot(metrics["bad_rate"], '-', label="bad_rate")
+        plt.plot(metrics["allowed_rate"], '-', label="allowed_rate")
         plt.legend()
         plt.savefig(self.dir + "rates.png")
         plt.clf()
@@ -99,13 +89,13 @@ class SavingModule:
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
             
-        np.save(data_dir + "loss.npy", np.array(loss_l))
-        np.save(data_dir + "p_forbidden.npy", np.array(p_forbidden_l))
-        np.save(data_dir + "p_good.npy", np.array(p_good_l))
-        np.save(data_dir + "p_bad.npy", np.array(p_bad_l))
+        np.save(data_dir + "loss.npy", np.array(metrics["loss"]))
+        np.save(data_dir + "p_forbidden.npy", np.array(metrics["p_forbidden"]))
+        np.save(data_dir + "p_good.npy", np.array(metrics["p_good"]))
+        np.save(data_dir + "p_bad.npy", np.array(metrics["p_bad"]))
         
-        np.save(data_dir + "good_rate.npy", np.array(good_rate_l))
-        np.save(data_dir + "bad_rate.npy", np.array(bad_rate_l))
-        np.save(data_dir + "allowed_rate.npy", np.array(bad_rate_l))
+        np.save(data_dir + "good_rate.npy", np.array(metrics["good_rate"]))
+        np.save(data_dir + "bad_rate.npy", np.array(metrics["bad_rate"]))
+        np.save(data_dir + "allowed_rate.npy", np.array(metrics["allowed_rate"]))
         
         

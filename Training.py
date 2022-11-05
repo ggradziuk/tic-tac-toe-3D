@@ -15,6 +15,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import os
+from collections import defaultdict
 
 n = 3
 epsilon = 1e-8
@@ -23,9 +24,9 @@ np.random.seed(42)
 init_model_name = ""
 
 ### Training parameters ###
-batch_size = 300
-n_batches = 100
-n_epochs = 201
+batch_size = 10#300
+n_batches = 3#100
+n_epochs = 11#201
 max_depth = 100
 temperature = 0.1
 rand_move_rate = 0.15
@@ -34,7 +35,7 @@ train_on_random = False
 
 bad_penalty_factor = 1
 
-additional_notes = "Trying the new accuracy metrics."
+additional_notes = "Test new metrics structure."
 #TODO: try randomizing only one player for generating data
 #TODO: after training with maxdepth=100 it learns how to end games quickly
 #      and so it works really bad for advanced game stages
@@ -94,16 +95,17 @@ def grad(model, states, moves, weights):
     return loss, tape.gradient(loss, model.trainable_variables)
 
 def get_metrics(model, states, moves, weights, training=False):
+    metrics = {}
     move_probs = model(states, training=training)
     forbidden_probs = move_probs * tf.math.abs(states)
     tot_p_forbidden = tf.reduce_sum(forbidden_probs, axis=-1)
-    mean_tot_p_forbidden = tf.reduce_mean(tot_p_forbidden)
+    metrics["p_forbidden"] = tf.reduce_mean(tot_p_forbidden)
     
     p_made_move = tf.gather(move_probs, moves, axis=-1, batch_dims=1) 
     good_move_prob = tf.gather(p_made_move, tf.where(weights > 0))
     bad_move_prob = tf.gather(p_made_move, tf.where(weights < 0))
-    mean_good_prob = tf.reduce_mean(good_move_prob)
-    mean_bad_prob = tf.reduce_mean(bad_move_prob)
+    metrics["p_good"] = tf.reduce_mean(good_move_prob)
+    metrics["p_bad"] = tf.reduce_mean(bad_move_prob)
     
     #TODO: add metrics: %good move chosen, %bad move chosen, %allowed move chosen
     # additional metrics:
@@ -114,21 +116,11 @@ def get_metrics(model, states, moves, weights, training=False):
     allowed_guessed_made_overlap = tf.cast(tf.equal(allowed_guessed_moves, moves), dtype=tf.float32)
     is_allowed_move_guessed = tf.cast(tf.equal(allowed_guessed_moves, guessed_moves), dtype=tf.float32)
     
-    bad_move_rate = tf.reduce_mean( tf.gather(allowed_guessed_made_overlap, tf.where(weights < 0)) )
-    good_move_rate = tf.reduce_mean( tf.gather(allowed_guessed_made_overlap, tf.where(weights > 0)) )
-    allowed_move_rate = tf.reduce_mean(is_allowed_move_guessed)
+    metrics["bad_rate"] = tf.reduce_mean( tf.gather(allowed_guessed_made_overlap, tf.where(weights < 0)) )
+    metrics["good_rate"] = tf.reduce_mean( tf.gather(allowed_guessed_made_overlap, tf.where(weights > 0)) )
+    metrics["allowed_rate"] = tf.reduce_mean(is_allowed_move_guessed)
     
-    return mean_tot_p_forbidden, mean_good_prob, mean_bad_prob, good_move_rate, bad_move_rate, allowed_move_rate
-
-
-
-loss_l = []
-p_forbidden_l = []
-p_good_l = []
-p_bad_l = []
-good_rate_l = []
-bad_rate_l = []
-allowed_rate_l = []
+    return metrics
 
 saving_module = SavingModule(model=model,
                             optimizer=optimizer,
@@ -157,6 +149,7 @@ else:
                                weight_profile=weight_profile) # tried without added randomness, gets stuck in a shitty fixed point
 
 batch_gen = BatchGenerator(n, state_gen, batch_size)
+metrics = defaultdict(lambda : [])
 
 for epoch in range(n_epochs):
     loss_sum = 0
@@ -166,38 +159,26 @@ for epoch in range(n_epochs):
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
         loss_sum += loss
     
-    # calculate the metrics for a single batch
+    metrics["loss"].append(loss_sum / n_batches)
+    # calculate the remaining metrics for a single batch
     data = next(batch_gen)
-    p_forbidden, p_good, p_bad, good_rate, bad_rate, allowed_rate = accuracy(model, *data, training=False)
-    p_forbidden_l.append(p_forbidden)
-    p_good_l.append(p_good)
-    p_bad_l.append(p_bad)
-    good_rate_l.append(good_rate)
-    bad_rate_l.append(bad_rate)
-    allowed_rate_l.append(allowed_rate)
-    #TODO: make a dictionary for all these metrics, so that they dont get mixed up by confusing positions?
+    metrics_other = get_metrics(model, *data, training=False)
+    for key, val in metrics_other.items():
+        metrics[key].append(val)
             
-    loss_l.append(loss_sum / n_batches)
+    
     
     if epoch % 10 == 0:
-        saving_module.save_checkpoint(model,
-                                      epoch=epoch,
-                                      loss_l=loss_l,
-                                      p_forbidden_l=p_forbidden_l,
-                                      p_good_l=p_good_l,
-                                      p_bad_l=p_bad_l,
-                                      good_rate_l=good_rate_l,
-                                      bad_rate_l=bad_rate_l,
-                                      allowed_rate_l=allowed_rate_l)
+        saving_module.save_checkpoint(model, epoch, metrics)
         
         print("After ", epoch,
-              " epochs, loss: ", loss_l[-1].numpy(),
-              " forbidden: ", np.mean(p_forbidden_l[-10:]),
-              " p_good: ", np.mean(p_good_l[-10:]),
-              " p_bad ", np.mean(p_bad_l[-10:]),
-              " good_rate: ", np.mean(good_rate_l[-10:]),
-              " bad_rate ", np.mean(bad_rate_l[-10:]),
-              " allowed_rate ", np.mean(allowed_rate_l[-10:]))
+              " epochs, loss: ", metrics["loss"][-1].numpy(),
+              " forbidden: ", np.mean(metrics["p_forbidden"][-10:]),
+              " p_good: ", np.mean(metrics["p_good"][-10:]),
+              " p_bad ", np.mean(metrics["p_bad"][-10:]),
+              " good_rate: ", np.mean(metrics["good_rate"][-10:]),
+              " bad_rate ", np.mean(metrics["bad_rate"][-10:]),
+              " allowed_rate ", np.mean(metrics["allowed_rate"][-10:]))
 
 #TODO: trenuj progresywnie: 2 ostatnie ruchy, 4 ostatnei ruchy, 6 ostatnich ruchów itd.
 
