@@ -7,7 +7,6 @@ Created on Mon Oct 17 17:38:29 2022
 """
 
 import numpy as np
-import random
 import ast
 import time
 
@@ -29,7 +28,7 @@ def print_state(state, O_sym='O', X_sym='X', E_sym='‾'):
     print(" ".join([" " + n * "‾ "] * n))
     
 class Game:
-    def __init__(self, n, init_state=None, strategy=None, O_sym='O', X_sym='X'):
+    def __init__(self, n, init_state=None, strategy=None, rand_move_rate=0, temperature=0, O_sym='O', X_sym='X'):
         if init_state is None:
             self.state = np.zeros(n ** 3, dtype=np.int32)
         else:
@@ -40,16 +39,27 @@ class Game:
         self.empty_fields = set(range(n ** 3))
         self.turn = 1
         self.n = n
+        self.n2 = n**2
+        self.n3 = n**3
         self.last_field_tuple = None
         self.last_field = None
         self.winner = 0
         self.strategy = strategy
+        self.rand_move_rate = rand_move_rate
+        self.temperature = temperature
         self.O_sym = O_sym
         self.X_sym = X_sym
-        
-    def reset(self):
-        self.__init__(self.n)
     
+    #TODO: simplify reset function
+    # def reset(self):
+    #     self.__init__(self.n, strategy=self.strategy, rand_move_rate=self.rand_move_rate, temperature=self.temperature, O_sym=self.O_sym, X_sym=self.X_sym)
+    def reset(self):
+        self.state = np.zeros(self.n3, dtype=np.int32)
+        self.state3d = np.zeros((self.n, self.n, self.n), dtype=np.int32)
+        self.empty_fields = set(range(self.n3))
+        self.winner = 0
+        
+        
     def check_win(self):
         x, y, z = self.last_field_tuple
         # wins along cartesian axes
@@ -64,21 +74,21 @@ class Game:
         if y == z:
             win = all([self.state3d[x, _y, _z] == self.turn for _y, _z in zip(ran, ran)])
             if win: return True
-        if y == -z:
+        if y == self.n - 1 - z:
             win = all([self.state3d[x, _y, _z] == self.turn for _y, _z in zip(ran, nar)])
             if win: return True
            
         if x == z:
             win = all([self.state3d[_x, y, _z] == self.turn for _x, _z in zip(ran, ran)])
             if win: return True
-        if x == -z:
+        if x == self.n - 1 - z:
             win = all([self.state3d[_x, y, _z] == self.turn for _x, _z in zip(ran, nar)])
             if win: return True
              
         if x == y:
             win = all([self.state3d[_x, _y, z] == self.turn for _x, _y in zip(ran, ran)])
             if win: return True
-        if x == -y:
+        if x == self.n - 1 - y:
             win = all([self.state3d[_x, _y, z] == self.turn for _x, _y in zip(ran, nar)])
             if win: return True
             
@@ -93,20 +103,25 @@ class Game:
             
             
     def make_move(self, field=None):
+        # TODO: check validity of move indices
         if isinstance(field, tuple):
             field_tuple = field
-            field = int(field[0] * self.n**2 + field[1] * self.n + field[2])
+            if len(field) != 3:
+                print("Invalid input, try again!")
+                return False
+            field = int(field[0] * self.n2 + field[1] * self.n + field[2])
         else:
             if field is None:
-                if self.strategy == None:
+                if self.strategy == None or np.random.random() < self.rand_move_rate:
                     #make random move #TODO: chosing random field is not efficient
-                    field = random.choice(list(self.empty_fields))
+                    field = np.random.choice(list(self.empty_fields))
                 else:
                     # Strategy is the ML decision model.
                     # Multiply by self.turn, so that current player's fields
                     # in self.state are 1 and opponents fields are -1.
                     model_input = np.reshape(self.state * self.turn, (1,-1))
-                    move_probs = self.strategy(model_input)[0]
+                    move_probs = self.strategy(model_input)[0].numpy()
+                    move_probs += np.random.normal(0, self.temperature, self.n3)
                     candidates = np.argsort(move_probs)
                     for ind in reversed(candidates):
                         if ind in self.empty_fields:
@@ -114,8 +129,10 @@ class Game:
                             break
                     
             #assert(isinstance(field, int))
-            field_tuple = (field // self.n**2, field % self.n**2 // self.n, field % self.n)
-            
+            field_tuple = (field // self.n2, field % self.n2 // self.n, field % self.n)
+        if not 0 <= field < self.n3:
+            print("Invalid coordinates, try again.")
+            return False
         if not field in self.empty_fields:
             print("This field is already taken! Choose a different one!")
             return False
@@ -152,7 +169,11 @@ class Game:
                 print("Your turn!")
                 end_turn = False
                 while(not end_turn):
-                    field = ast.literal_eval(input("Enter the coordinates: "))
+                    try:
+                        field = ast.literal_eval(input("Enter the coordinates: "))
+                    except:
+                        print("Invalid input, try again.")
+                        continue
                     end_turn = self.make_move(field)
             else:
                 print("Computer's move!")

@@ -9,9 +9,10 @@ from Game import *
 import copy
 import numpy as np
 
-def StateGenerator(n=4, strategy=None, max_depth=100, out_format='state'):
+def StateGenerator(n=4, strategy=None, rand_move_rate=0, temperature=0, weight_profile="flat", max_depth=100, out_format='state'):
+    game = Game(n, strategy=strategy, rand_move_rate=rand_move_rate, temperature=temperature)
     while(True):
-        game = Game(n, strategy=strategy)
+        game.reset()
         states = []
         moves = []
         weights = []
@@ -21,9 +22,12 @@ def StateGenerator(n=4, strategy=None, max_depth=100, out_format='state'):
             weights.append(game.turn)
             game.make_move()
             moves.append(game.last_field)
-            
+          
         if game.winner == 0: # Game ended with a draw, not useful for learning.
             continue
+        
+        #TODO: maybe don't throw out the draws
+        #####  maybe include them with an appropriate weight
         
         ### crop the early stages ###
         states = np.array(states[-max_depth:], dtype=np.float32)
@@ -35,7 +39,8 @@ def StateGenerator(n=4, strategy=None, max_depth=100, out_format='state'):
         states = states * np.reshape(weights, (-1, 1))
         
         weights *= weights[-1] #winning move weights positive
-        weights *= np.linspace(1 / weights.shape[-1], 1, weights.shape[-1])
+        if weight_profile == "linear":
+            weights *= np.linspace(1 / weights.shape[-1], 1, weights.shape[-1])
         ### the closer to the end of the game, the more important the move ###
         ### for example for for a game ended after 5 moves:                ###
         ### overal_weights = array([ 0.2, -0.4,  0.6, -0.8,  1. ])         ###
