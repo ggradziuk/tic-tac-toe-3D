@@ -27,6 +27,10 @@ class SavingModule:
                  init_model_name="",
                  data_gen_model_name="",
                  additional_notes=""):
+        """Initialize the SavingModule class.
+        
+        Create directories to save the model checkpoints, metrics and plots.
+        """
         
         self.dir = f"models/{optimizer._name}_{str(optimizer.learning_rate.numpy())}/"
         self.dir += f"max_depth={max_depth}/"
@@ -60,11 +64,12 @@ class SavingModule:
             sys.stdout = original_stdout
     
     
-    def save_checkpoint(self, model, epoch, metrics):
-        ### save a checkpoint of the model ###
+    def save_checkpoint(self, model, epoch):
+        """Save a checkpoint of the model."""
         model.save(self.dir + f"checkpoints/{epoch}")
         
-        ### generate and save plots ###
+    def save_metrics_plots(self, metrics):
+        """Generate and save plots of the metrics during training."""
         plt.plot(metrics["loss"], '-', label="loss")
         plt.legend()
         plt.savefig(self.dir + "loss.png")
@@ -84,7 +89,8 @@ class SavingModule:
         plt.savefig(self.dir + "rates.png")
         plt.clf()
         
-        ### save numerical data ###
+    def save_metrics_data(self, metrics):
+        """Save numerical data for the metrics."""
         data_dir = self.dir + "data/"
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)

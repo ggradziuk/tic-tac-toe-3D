@@ -8,7 +8,6 @@ Created on Wed Oct 19 11:58:26 2022
 
 from Game import *
 from GameGenerator import *
-# from Reports import *
 from SavingModule import *
 
 import numpy as np
@@ -169,7 +168,9 @@ for epoch in range(n_epochs):
     
     
     if epoch % 10 == 0:
-        saving_module.save_checkpoint(model, epoch, metrics)
+        saving_module.save_checkpoint(model, epoch)
+        saving_module.save_metrics_plots(metrics)
+        saving_module.save_metrics_data(metrics)
         
         print("After ", epoch,
               " epochs, loss: ", metrics["loss"][-1].numpy(),

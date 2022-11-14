@@ -10,25 +10,45 @@ import numpy as np
 import ast
 import time
 
-def print_state(state, O_sym='O', X_sym='X', E_sym='‾'):
-    if len(state.shape) == 1:
-        n = int(np.cbrt(state.shape[-1]))
-        assert n**3 == state.shape[-1]
-        state = state.reshape((n, n, n))
-    else:
-        n = state.shape[-1]
-        assert len(state.shape) == 3 and np.all(np.equal(state.shape, n))
+# def print_state(state, O_sym='O', X_sym='X', E_sym='‾'):
+#     if len(state.shape) == 1:
+#         n = int(np.cbrt(state.shape[-1]))
+#         assert n**3 == state.shape[-1]
+#         state = state.reshape((n, n, n))
+#     else:
+#         n = state.shape[-1]
+#         assert len(state.shape) == 3 and np.all(np.equal(state.shape, n))
    
-    mark_dict = {1 : O_sym, -1 : X_sym, 0 : E_sym}
-    state = state.reshape((n, n, n)).astype(np.int32)
+#     mark_dict = {1 : O_sym, -1 : X_sym, 0 : E_sym}
+#     state = state.reshape((n, n, n)).astype(np.int32)
     
-    #print(" ".join([" " + n * "_ "] * n))
-    for row in range(n):
-        print(" ".join(["|" + "".join([mark_dict[c] + "|" for c in state[board, row, :]]) for board in range(n)]))
-    print(" ".join([" " + n * "‾ "] * n))
+#     #print(" ".join([" " + n * "_ "] * n))
+#     for row in range(n):
+#         print(" ".join(["|" + "".join([mark_dict[c] + "|" for c in state[board, row, :]]) for board in range(n)]))
+#     print(" ".join([" " + n * "‾ "] * n))
     
 class Game:
-    def __init__(self, n, init_state=None, strategy=None, rand_move_rate=0, temperature=0, O_sym='O', X_sym='X'):
+    """The Game class.
+    
+    Stores the curent state of the game, allows for updating the state,
+    calculating the next move given a strategy and playing a game against
+    a trained model.
+    """
+    def __init__(self, n,
+                 init_state=None,
+                 strategy=None,
+                 rand_move_rate=0,
+                 temperature=0,
+                 O_sym='O', X_sym='X'):
+        r"""Initialize the Game class.
+        
+        n - linear dimension of the board (int)
+        init_state - a generic state to start the game at (list of length n^3) (default None -> starts with an empty board)
+        strategy - function/model: [state] -> [[probabilities for next move]], (default None -> random move)
+        rand_move_rate - rate at which a random move is made instead of using the strategy (default 0)
+        temperature - stdev of fluctuations added to probabilities returned by the strategy (default 0)
+        """
+        
         if init_state is None:
             self.state = np.zeros(n ** 3, dtype=np.int32)
         else:
@@ -50,17 +70,14 @@ class Game:
         self.O_sym = O_sym
         self.X_sym = X_sym
     
-    #TODO: simplify reset function
-    # def reset(self):
-    #     self.__init__(self.n, strategy=self.strategy, rand_move_rate=self.rand_move_rate, temperature=self.temperature, O_sym=self.O_sym, X_sym=self.X_sym)
     def reset(self):
+        """Clear the board and prepare the Game instance for a new game."""
         self.state = np.zeros(self.n3, dtype=np.int32)
         self.state3d = np.zeros((self.n, self.n, self.n), dtype=np.int32)
         self.empty_fields = set(range(self.n3))
         self.winner = 0
         
-        
-    def check_win(self):
+    def _check_win(self):
         x, y, z = self.last_field_tuple
         # wins along cartesian axes
         win = any([np.all(np.equal(self.state3d[:, y, z], self.turn)),
@@ -92,7 +109,7 @@ class Game:
             win = all([self.state3d[_x, _y, z] == self.turn for _x, _y in zip(ran, nar)])
             if win: return True
             
-        # wins along long diags
+        # wins along long diagonals
         win = any([all([self.state3d[_x, _y, _z] == self.turn for _x, _y, _z in zip(ran, ran, ran)]),
                    all([self.state3d[_x, _y, _z] == self.turn for _x, _y, _z in zip(ran, ran, nar)]),
                    all([self.state3d[_x, _y, _z] == self.turn for _x, _y, _z in zip(ran, nar, ran)]),
@@ -103,7 +120,9 @@ class Game:
             
             
     def make_move(self, field=None):
-        # TODO: check validity of move indices
+        """Make a move at a specified field. If no field specified, calculate it first.
+        field - int or a tuple of three ints (default None -> move is calculated)
+        """
         if isinstance(field, tuple):
             field_tuple = field
             if len(field) != 3:
@@ -112,28 +131,12 @@ class Game:
             field = int(field[0] * self.n2 + field[1] * self.n + field[2])
         else:
             if field is None:
-                if self.strategy == None or np.random.random() < self.rand_move_rate:
-                    #make random move #TODO: chosing random field is not efficient
-                    field = np.random.choice(list(self.empty_fields))
-                else:
-                    # Strategy is the ML decision model.
-                    # Multiply by self.turn, so that current player's fields
-                    # in self.state are 1 and opponents fields are -1.
-                    model_input = np.reshape(self.state * self.turn, (1,-1))
-                    move_probs = self.strategy(model_input)[0].numpy()
-                    move_probs += np.random.normal(0, self.temperature, self.n3)
-                    candidates = np.argsort(move_probs)
-                    for ind in reversed(candidates):
-                        if ind in self.empty_fields:
-                            field = ind
-                            break
-                    
-            #assert(isinstance(field, int))
+                field = self._calculate_move()
             field_tuple = (field // self.n2, field % self.n2 // self.n, field % self.n)
-        if not 0 <= field < self.n3:
+        if not 0 <= field < self.n3 or not isinstance(field, int):
             print("Invalid coordinates, try again.")
             return False
-        if not field in self.empty_fields:
+        if field not in self.empty_fields:
             print("This field is already taken! Choose a different one!")
             return False
         
@@ -142,23 +145,45 @@ class Game:
         self.last_field_tuple = field_tuple
         self.state[field] = self.turn
         self.state3d[field_tuple] = self.turn
-        if self.check_win():
+        if self._check_win():
             self.winner = self.turn
         self.turn *= -1
         return True
     
+    def _calculate_move(self):
+        if self.strategy == None or np.random.random() < self.rand_move_rate:
+            #make random move #TODO: chosing random field is not efficient
+            field = np.random.choice(list(self.empty_fields))
+        else:
+            # Strategy is the ML decision model.
+            # Multiply by self.turn, so that current player's fields
+            # in self.state are 1 and opponents fields are -1.
+            model_input = np.reshape(self.state * self.turn, (1,-1))
+            move_probs = self.strategy(model_input)[0].numpy()
+            move_probs += np.random.normal(0, self.temperature, self.n3)
+            candidates = np.argsort(move_probs)
+            for ind in reversed(candidates):
+                if ind in self.empty_fields:
+                    field = ind
+                    break
+        return field
+    
     def print_state(self):
+        """Print the current state of the game to the standard output."""
         mark_dict = {1 : self.O_sym, -1 : self.X_sym, 0 : '‾'}
         for row in range(self.n):
             print(" ".join(["|" + "".join([mark_dict[c] + "|" for c in self.state3d[board, row, :]]) for board in range(self.n)]))
         print(" ".join([" " + self.n * "‾ "] * self.n))
         
     def play(self, turn=1):
+        """Start a human vs computer game in the console.
+        turn: 1 -> human starts, -1 -> computer starts
+        """
         self.turn = turn
         if self.turn == 1:
             self.print_state()
         while(True):
-            if self.winner != 0: #TODO: or no move moves possible
+            if self.winner != 0:
                 print(self.O_sym if self.winner == 1 else self.X_sym, " wins!")
                 return self.winner
             elif len(self.empty_fields) == 0:
